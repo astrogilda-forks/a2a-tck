@@ -61,15 +61,36 @@ def prune(node: object) -> object:
     return node
 
 
-def dual_named(node: object) -> bool:
-    """True when an object carries one schema field under both its JSON name and its protobuf name."""
+# These schema objects scope alias checks. They do not validate a card or define a new reading.
+# Unknown extensions and Struct values retain their served names and bytes.
+SCHEMAS = {
+    name.replace(" ", ""): schema
+    for name, schema in json.loads((Path(__file__).resolve().parents[3] / "specification/a2a.json").read_text(encoding="utf-8"))[
+        "definitions"
+    ].items()
+}
+
+
+def dual_named(node: object, schema: dict | None = None) -> bool:
+    """Refuse two spellings of a declared field, preserving arbitrary extension and map names."""
+    if schema is None:
+        schema = SCHEMAS["AgentCard"]
+    if "$ref" in schema:
+        schema = SCHEMAS[schema["$ref"].split(".")[-3]]
     if isinstance(node, dict):
-        keys = set(node)
-        if any(key != snake(key) and snake(key) in keys for key in keys):
+        properties = schema.get("properties", {})
+        names = {snake(name): name for name in properties}
+        if any(name != snake(name) and name in node and snake(name) in node for name in properties):
             return True
-        return any(dual_named(value) for value in node.values())
-    if isinstance(node, list):
-        return any(dual_named(element) for element in node)
+        extra = schema.get("additionalProperties")
+        for name, value in node.items():
+            child = properties.get(name) or properties.get(names.get(name))
+            if child is None and isinstance(extra, dict):
+                child = extra
+            if child is not None and dual_named(value, child):
+                return True
+    elif isinstance(node, list) and "items" in schema:
+        return any(dual_named(value, schema["items"]) for value in node)
     return False
 
 

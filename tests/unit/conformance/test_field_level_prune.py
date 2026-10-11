@@ -184,3 +184,53 @@ def test_bad_signature_and_key_refused(tmp_path: Path, sign: Sign) -> None:
 def test_missing_file_returns_refusal(tmp_path: Path) -> None:
     """Return the documented refusal when an input file cannot be read."""
     assert reader.main(str(tmp_path / "missing-card"), str(tmp_path / "missing-jwks")) == 1
+
+
+@pytest.mark.parametrize(
+    "card",
+    [
+        {"myFlag": True, "my_flag": True},
+        {"capabilities": {"extensions": [{"uri": "urn:test", "params": {"bearerFormat": "a", "bearer_format": "b"}}]}},
+        {"unknown": [{"inputModes": ["a"], "input_modes": ["b"]}]},
+        {"securitySchemes": {"schemeOne": {}, "scheme_one": {}}},
+    ],
+)
+def test_arbitrary_extension_and_map_names_are_not_schema_aliases(tmp_path: Path, sign: Sign, card: dict) -> None:
+    """Preserve arbitrary extension and map names and still detect a changed signed field."""
+    signature, jwks = sign(reader.jcs(reader.prune(card)))
+    served = {**card, "signatures": [signature]}
+    assert run(tmp_path, served, jwks) == 0
+    served["changed"] = True
+    assert run(tmp_path, served, jwks) == 1
+
+
+@pytest.mark.parametrize(
+    "card",
+    [
+        {"defaultInputModes": ["a"], "default_input_modes": ["b"]},
+        {"skills": [{"inputModes": ["a"], "input_modes": ["b"]}]},
+        {"securitySchemes": {"a": {"httpAuthSecurityScheme": {"bearerFormat": "a", "bearer_format": "b"}}}},
+        {"supported_interfaces": [{"protocolBinding": "JSONRPC", "protocol_binding": "GRPC"}]},
+        {"capabilities": {"pushNotifications": False, "push_notifications": False}},
+        {"capabilities": {"extendedAgentCard": False, "extended_agent_card": False}},
+    ],
+)
+def test_actual_schema_aliases_refused_even_when_signed(tmp_path: Path, sign: Sign, card: dict) -> None:
+    """Refuse actual schema aliases at top level and in repeated, map, and nested fields."""
+    signature, jwks = sign(reader.jcs(reader.prune(card)))
+    assert run(tmp_path, {**card, "signatures": [signature]}, jwks) == 1
+
+
+@pytest.mark.parametrize(
+    "card",
+    [
+        {"defaultInputModes": ["a"]},
+        {"default_input_modes": ["a"]},
+        {"skills": [{"input_modes": ["a"]}]},
+        {"security_schemes": {"a": {"http_auth_security_scheme": {"bearer_format": "a"}}}},
+    ],
+)
+def test_existing_single_spelling_contract_preserved(tmp_path: Path, sign: Sign, card: dict) -> None:
+    """Preserve each already supported single spelling without normalizing the signed bytes."""
+    signature, jwks = sign(reader.jcs(reader.prune(card)))
+    assert run(tmp_path, {**card, "signatures": [signature]}, jwks) == 0
