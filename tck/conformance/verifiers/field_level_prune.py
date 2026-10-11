@@ -10,8 +10,10 @@ Exit status 0 means this reading accepts the card's signature, 1 that it refuses
   ``securityRequirements: [{}]`` is read as served (S1-009) and not as its pruned form (S1-010), which is the pair
   that names this reading;
 * RFC 8785 over those bytes;
-* unknown fields are kept as served, and a card carrying the same schema field under both its JSON name and its
-  protobuf name is refused, the reading proposed on a2aproject/A2A#2122.
+* unknown fields participate in that field-level pruning; this is not the separate ``unknown-retain`` reading,
+  which keeps unknown fields verbatim;
+* a card carrying the same schema field under both its JSON name and its protobuf name is refused,
+  the reading proposed on a2aproject/A2A#2122.
 
 Nothing is imported from an SDK or from the corpus generator: the covered bytes are built here from the served JSON,
 and the signature is checked over exactly those bytes with ``cryptography`` and ``rfc8785``. JSON numbers use the RFC's binary64 input model.
@@ -62,7 +64,7 @@ def prune(node: object) -> object:
 
 
 # These schema objects scope alias checks. They do not validate a card or define a new reading.
-# Unknown extensions and Struct values retain their served names and bytes.
+# Alias checks leave arbitrary extension and Struct member names uninterpreted. Field pruning still applies.
 SCHEMAS = {
     name.replace(" ", ""): schema
     for name, schema in json.loads((Path(__file__).resolve().parents[3] / "specification/a2a.json").read_text(encoding="utf-8"))[
